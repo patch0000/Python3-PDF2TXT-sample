@@ -34,7 +34,7 @@ This program is a hint for cases where TextBox is not used.
 If this program does not work for you, please refer to the See Also section.
 
 2.PDFPage.get_pages
-Text comes out in one stroke, even the page break is not understood.
+Since it is output at once, I can not recognize a page break.
 Also, in the case of English PDF, the space between words disappears
 in some cases.
 
@@ -75,7 +75,7 @@ document = PDFDocument(parser, password)
 # Guess the length of blanks and the height of line breaks
 def calcSpace(objs):
     spaceList = list()
-    wordHeight = list()
+    wordHeightList = list()
     xpos = 0
     for i in objs:
         if (issubclass(i.__class__, LTChar)):
@@ -91,18 +91,23 @@ def calcSpace(objs):
 
             spaceList.append(i.x0 - xpos)
             xpos = i.x1
-            wordHeight.append(i.y1 - i.y0)
+            wordHeightList.append(i.y1 - i.y0)
 
-    avg = sum(spaceList)/len(spaceList)
+    maxWordHeight = 0
+    if len(wordHeightList) != 0:
+        maxWordHeight = max(wordHeightList)
+
     minSpace = 0
-    for i in spaceList:
-        if i > avg:
-            if minSpace == 0:
-                minSpace = i
-            elif minSpace > i:
-                minSpace = i
+    if len(spaceList) != 0:
+        avg = sum(spaceList)/len(spaceList)
+        for i in spaceList:
+            if i > avg:
+                if minSpace == 0:
+                    minSpace = i
+                elif minSpace > i:
+                    minSpace = i
 
-    return(minSpace, max(wordHeight))
+    return(minSpace, maxWordHeight)
 
 
 buf = ''
@@ -110,7 +115,6 @@ for page in PDFPage.create_pages(document):
     interpreter.process_page(page)
     layout = device.get_result()
     for l in layout:
-
         if (not hasattr(l, "get_text")):
             if (isinstance(l, LTFigure)):
                 xpos = 0
@@ -126,7 +130,6 @@ for page in PDFPage.create_pages(document):
                         # between charcter. We may need to arrange the space.
                         if ypos < i.y1 and i.x0 - xpos > minSpace:
                             buf += " "
-
                         xpos = i.x1
 
                         # crlf
