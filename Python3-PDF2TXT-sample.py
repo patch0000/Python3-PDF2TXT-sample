@@ -21,13 +21,14 @@ conda config --show
 conda config --set remote_read_timeout_secs 6000
 conda config --show
 conda install -c conda-forge pdfminer.six
-and wait long long time.
+and wait long time.
 
 
 There are two ways to extract text from PDF.
 
 1.PDFPage.create_pages
-There are sentences that can not be extracted occasionally.
+This program uses PDFPage.create_pages.
+Maybe there are sentences that can not be extracted occasionally.
 PDF has a different structure depending on the author and software.
 Unfortunately I could not make this program versatile.
 This program is a hint for cases where TextBox is not used.
@@ -51,25 +52,8 @@ from pdfminer.pdfinterp import PDFResourceManager, PDFPageInterpreter
 from pdfminer.converter import PDFPageAggregator
 from pdfminer.layout import LAParams, LTFigure, LTChar
 from pdfminer.pdfpage import PDFPage
-from io import StringIO
-
-inputPDFFile = r'C:\work\py\test\my.pdf'
-outputTxtFile = r'C:\work\py\test\my.txt'
-
-# Open a PDF file.
-fp = open(inputPDFFile, 'rb')
-
-rsrcmgr = PDFResourceManager()
-rettxt = output = StringIO()
-laparams = LAParams()
-# Output vertical writing characters horizontally
-laparams.detect_vertical = True
-device = PDFPageAggregator(rsrcmgr, laparams=laparams)
-interpreter = PDFPageInterpreter(rsrcmgr, device)
-
-password = ""
-parser = PDFParser(fp)
-document = PDFDocument(parser, password)
+import glob
+import re
 
 
 # Guess the length of blanks and the height of line breaks
@@ -80,7 +64,7 @@ def calcSpace(objs):
     for i in objs:
         if (issubclass(i.__class__, LTChar)):
             # first charcter
-            if xpos == 0 and ypos == 0:
+            if xpos == 0:
                 xpos = i.x1
                 continue
 
@@ -110,52 +94,73 @@ def calcSpace(objs):
     return(minSpace, maxWordHeight)
 
 
-buf = ''
-for page in PDFPage.create_pages(document):
-    interpreter.process_page(page)
-    layout = device.get_result()
-    for l in layout:
-        if (not hasattr(l, "get_text")):
-            if (isinstance(l, LTFigure)):
-                xpos = 0
-                ypos = 0
-                (minSpace, maxWordHeight) = calcSpace(l._objs)
-                for i in l._objs:
-                    if (issubclass(i.__class__, LTChar)):
-                        # first char
-                        if xpos == 0 and ypos == 0:
+def outputText(inputPDFFile, outputTXTFile):
+    # Open a PDF file.
+    fp = open(inputPDFFile, 'rb')
+
+    rsrcmgr = PDFResourceManager()
+#    rettxt = output = StringIO()
+    laparams = LAParams()
+    # Output vertical writing characters horizontally
+    laparams.detect_vertical = True
+    device = PDFPageAggregator(rsrcmgr, laparams=laparams)
+    interpreter = PDFPageInterpreter(rsrcmgr, device)
+    password = ""
+    parser = PDFParser(fp)
+    document = PDFDocument(parser, password)
+
+    buf = ''
+    for page in PDFPage.create_pages(document):
+        interpreter.process_page(page)
+        layout = device.get_result()
+        for l in layout:
+            if (not hasattr(l, "get_text")):
+                if (isinstance(l, LTFigure)):
+                    xpos = 0
+                    ypos = 0
+                    (minSpace, maxWordHeight) = calcSpace(l._objs)
+                    for i in l._objs:
+                        if (issubclass(i.__class__, LTChar)):
+                            # first char
+                            if xpos == 0 and ypos == 0:
+                                xpos = i.x1
+                                ypos = i.y0
+                            # between charcters.
+                            # We may need to arrange the space.
+                            if ypos < i.y1 and i.x0 - xpos > minSpace:
+                                buf += " "
                             xpos = i.x1
-                            ypos = i.y0
 
-                        # between charcter. We may need to arrange the space.
-                        if ypos < i.y1 and i.x0 - xpos > minSpace:
-                            buf += " "
-                        xpos = i.x1
+                            # crlf
+                            if ypos > i.y1:
+                                # print("\n")
+                                cr = ypos - i.y1
+                                while(cr > 0):
+                                    buf += "\n"
+                                    cr -= maxWordHeight
+                                ypos = i.y0
+                            buf += i.get_text()
+                    # next layout
+                    buf += "\n"
+                continue
+            else:
+                temp_str = l.get_text().rstrip("\n")
+                buf += str(temp_str) + "\n"
+        # next page
+        buf += "\n\n"
+    # End of for page in PDFPage.create
+    wfp = open(outputTXTFile, 'wt', encoding='UTF-8')
+    wfp.write(buf)
+    wfp.close()
 
-                        # crlf
-                        if ypos > i.y1:
-                            # print("\n")
-                            cr = ypos - i.y1
-                            while(cr > 0):
-                                buf += "\n"
-                                cr -= maxWordHeight
-                            ypos = i.y0
+    fp.close()
+    device.close()
 
-                        buf += i.get_text()
-                # next layout
-                buf += "\n"
-            continue
-        else:
-            temp_str = l.get_text().rstrip("\n")
-            buf += str(temp_str) + "\n"
 
-    # next page
-    buf += "\n\n"
+inputPDFDir = r'C:\work\git\GCrawler\data\job\\'
+outputTXTDir = r'C:\work\git\GCrawler\data\job\\'
 
-wfp = open(outputTxtFile, 'wt', encoding='UTF-8')
-wfp.write(buf)
-wfp.close()
-
-fp.close()
-device.close()
-rettxt.close()
+for file in glob.glob(inputPDFDir + '*.pdf'):
+    m = re.search(r'(.*)\.pdf$', file)
+    print("extract txt from " + file)
+    outputText(file, m.group(1) + '.txt')
